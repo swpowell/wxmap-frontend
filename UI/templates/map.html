@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Map Display</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.css" rel="stylesheet" />
+  <style>
+    body { margin:0; padding:0; }
+    #map { position:absolute; top:0; bottom:0; width:100%; }
+    #controls {
+      position:absolute; top:10px; right:10px; z-index:5;
+      background:rgba(255,255,255,0.92); padding:8px 10px;
+      border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.2);
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; font-size:13px;
+      min-width:240px;
+    }
+    #controls label { margin-right:6px; }
+    #controls select { font-size:13px; padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; }
+    #controls div { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Controls (Updated with Date/Time/FHR Selects) -->
+  <div id="controls">
+    <!-- Date, Init Time, and Forecast Hour Selection -->
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <div>
+        <label for="modelDateSelect">Run Date:</label>
+        <select id="modelDateSelect" style="width: 100px;"></select>
+      </div>
+      <div>
+        <label for="modelInitSelect">Init Time (Z):</label>
+        <select id="modelInitSelect" style="width: 70px;"></select>
+      </div>
+      <!-- NEW: Forecast Hour (FHR) Select -->
+      <div>
+        <label for="fhrSelect">Fhr (h):</label>
+        <select id="fhrSelect" style="width: 70px;"></select>
+      </div>
+    </div>
+    
+    <!-- Variable Selection -->
+    <div>
+      <label for="varSelect">Var:</label>
+      <select id="varSelect">
+        <option value="t">t</option>
+        <option value="u">u</option>
+        <option value="v">v</option>
+        <option value="gh">gh</option>
+      </select>
+    </div>
+    
+    <!-- Pressure Level Selection -->
+    <div>
+      <label for="levelSelect">Level (hPa):</label>
+      <select id="levelSelect"></select>
+    </div>
+    
+    <!-- GH Contour Overlay Controls -->
+    <div>
+      <label><input type="checkbox" id="ghContours"> GH contours</label>
+      <label style="margin-left:8px;">Level:</label>
+      <select id="ghLevelSelect" style="width:90px;"></select>
+    </div>
+  </div>
+
+  <script>
+    // --- Map init ---
+    mapboxgl.accessToken = '{{ mapbox_token }}';
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: [-98.5795, 39.8283],
+      zoom: 3
+    });
+
+    // --- Dynamic model run params (will be updated on change) ---
+    // Default values now come from the selects
+    let MODEL_DATE = "20251109";
+    let MODEL_INIT = "00";
+    let MODEL_FHR = "024"; // Changed to 'let' so it can be updated
+
+    // --- Controls ---
+    const $date  = document.getElementById('modelDateSelect');
+    const $init  = document.getElementById('modelInitSelect');
+    const $fhr   = document.getElementById('fhrSelect'); // NEW FHR control
+    const $var   = document.getElementById('varSelect');
+    const $lev   = document.getElementById('levelSelect');
+    const $chkGh = document.getElementById('ghContours');
+    const $ghLev = document.getElementById('ghLevelSelect');
+
+    // --- Utility Functions ---
+
+    // Date formatting helper YYYYMMDD
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}${m}${d}`;
+    }
+
+    // Populate the Date, Init Time, and FHR dropdowns
+    function populateModelRunSelectors() {
+      // 1. Populate Init Time (00Z, 06Z, 12Z, 18Z runs)
+      const initTimes = ["18", "12", "06", "00"];
+      $init.innerHTML = initTimes.map(t => 
+        `<option value="${t}">${t}Z</option>`
+      ).join('');
+      // Keep MODEL_INIT default value unless it was just initialized
+      $init.value = $init.value || MODEL_INIT; 
+
+      // 2. Populate Dates (last 7 days, including today)
+      const dates = [];
+      const today = new Date();
+      // Start i=0 (today) and go back 6 more days (7 total)
+      for (let i = 0; i <= 13; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        dates.push(d);
+      }
+      
+      $date.innerHTML = dates.map((d, index) => {
+        const dateStr = formatDate(d);
+        // Show "(Today)" next to the current date
+        const displayStr = `${d.getMonth() + 1}/${d.getDate()}` + (index === 0 ? ' (Today)' : '');
+        return `<option value="${dateStr}">${displayStr}</option>`;
+      }).join('');
+      
+      // Set the default date to the first item (today)
+      $date.selectedIndex = 0;
+      MODEL_DATE = $date.value;
+      
+      // 3. Populate Forecast Hours (FHR)
+      const fhrOptions = [];
+      // Use 6-hour increments up to 240 hours
+      for (let h = 0; h <= 240; h += 6) {
+        fhrOptions.push(String(h).padStart(3, '0'));
+      }
+      $fhr.innerHTML = fhrOptions.map(h => 
+        `<option value="${h}">+${h}</option>`
+      ).join('');
+      
+      // Set default FHR (24)
+      $fhr.value = $fhr.value || MODEL_FHR;
+    }
+
+    // Update global variables and refresh the map state
+    function updateModelRun() {
+        MODEL_DATE = $date.value;
+        MODEL_INIT = $init.value;
+        MODEL_FHR = $fhr.value;
+        console.log(`Model Run changed: ${MODEL_DATE} ${MODEL_INIT}Z +${MODEL_FHR}h`);
+        
+        // When the model run changes, we must reload the levels first
+        refreshAllData();
+    }
+    
+    // --- UPDATED: Tile URL builders (now use global variables) ---
+    function tilesUrl(v, p) {
+      return `/tiles/{z}/{x}/{y}.png?var=${encodeURIComponent(v)}&level=${encodeURIComponent(p)}&date=${MODEL_DATE}&init=${MODEL_INIT}&fhr=${MODEL_FHR}`;
+    }
+    function contoursUrl(ghLevel) {
+      return `/contours/{z}/{x}/{y}.png?gh_level=${encodeURIComponent(ghLevel)}&interval=6&label=1&date=${MODEL_DATE}&init=${MODEL_INIT}&fhr=${MODEL_FHR}`;
+    }
+
+    // --- UPDATED: Populate pressure levels for a variable ---
+    async function fetchLevelsFor(selectVar, targetSelectEl) {
+      try {
+        targetSelectEl.disabled = true;
+        // Pass the CURRENT model date/init/fhr to /levels API
+        const r = await fetch(`/levels?var=${encodeURIComponent(selectVar)}&date=${MODEL_DATE}&init=${MODEL_INIT}`);
+        if (!r.ok) throw new Error(`levels HTTP ${r.status}`);
+        const j = await r.json();
+        const levels = Array.isArray(j.levels) ? j.levels : [];
+        const sorted = levels.slice().sort((a,b) => Number(b) - Number(a)); // high->low
+        
+        const currentVal = targetSelectEl.value;
+        
+        targetSelectEl.innerHTML = sorted.map(l => {
+          const val = String(l);
+          return `<option value="${val}">${val}</option>`;
+        }).join('');
+        
+        // Restore previous selection if available, otherwise set to the first one
+        if (sorted.includes(Number(currentVal))) {
+            targetSelectEl.value = currentVal;
+        } else if (targetSelectEl.options.length > 0) {
+            targetSelectEl.selectedIndex = 0;
+        }
+      } catch (e) {
+        console.error('fetchLevelsFor failed:', e);
+        targetSelectEl.innerHTML = '';
+      } finally {
+        targetSelectEl.disabled = false;
+      }
+    }
+
+    // Ensure shaded raster source/layer exists
+    function ensureFieldSource() {
+      if (!$lev.value) return;
+      if (!map.getSource('field')) {
+        map.addSource('field', { type: 'raster', tiles: [tilesUrl($var.value, $lev.value)], tileSize: 256 });
+        map.addLayer({ id: 'field', type: 'raster', source: 'field', paint: { 'raster-opacity': 0.7 } });
+      }
+    }
+
+    // Force-refresh shaded tiles (remove/re-add avoids cache quirks)
+    function refreshTiles() {
+      const v = $var.value, p = $lev.value;
+      if (!p) return;
+      if (map.getLayer('field'))  map.removeLayer('field');
+      if (map.getSource('field')) map.removeSource('field');
+      map.addSource('field', { type: 'raster', tiles: [tilesUrl(v, p)], tileSize: 256 });
+      map.addLayer({ id: 'field', type: 'raster', source: 'field', paint: { 'raster-opacity': 0.7 } });
+    }
+
+    // Add/remove GH contour overlay
+    function refreshContours() {
+      const ghLevel = $ghLev.value;
+      if (map.getLayer('ghcontours'))  map.removeLayer('ghcontours');
+      if (map.getSource('ghcontours')) map.removeSource('ghcontours');
+      if ($chkGh.checked && ghLevel) {
+        map.addSource('ghcontours', { type: 'raster', tiles: [contoursUrl(ghLevel)], tileSize: 256 });
+        map.addLayer({ id: 'ghcontours', type: 'raster', source: 'ghcontours', paint: { 'raster-opacity': 1.0 } });
+      }
+    }
+
+    // Main refresh function called when model run or variable changes
+    async function refreshAllData() {
+        // 1. Fetch levels for the current main variable
+        await fetchLevelsFor($var.value, $lev);
+        
+        // 2. Refresh the shaded tiles
+        refreshTiles();
+        
+        // 3. Fetch levels for the GH variable (used for contours)
+        // This is done independently because the shaded field might not be 'gh'
+        await fetchLevelsFor('gh', $ghLev);
+        
+        // 4. Refresh contours
+        refreshContours();
+    }
+
+    // Lifecycle
+    map.on('load', async () => {
+      populateModelRunSelectors();
+      await refreshAllData();
+      ensureFieldSource(); // Initial setup
+    });
+
+    // Events for Model Run changes
+    $date.addEventListener('change', updateModelRun);
+    $init.addEventListener('change', updateModelRun);
+    $fhr.addEventListener('change', updateModelRun); // NEW: FHR listener
+
+    // Events for Map visualization changes
+    $var.addEventListener('change', () => {
+      refreshAllData(); // Variable change requires new levels/refresh
+    });
+    $lev.addEventListener('change', refreshTiles);
+    $chkGh.addEventListener('change', refreshContours);
+    $ghLev.addEventListener('change', refreshContours);
+  </script>
+</body>
+</html>
