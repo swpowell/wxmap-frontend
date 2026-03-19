@@ -1,0 +1,12 @@
+__pycache__/
+UI/__pycache__/
+venv/
+mapbox_token
+graphcast*
+aigfs*
+rtg*
+fcn*
+gfs*
+app0.py
+dummy.py
+grib_to_zarr.pymapbox_token

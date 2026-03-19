@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Weather Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Mapbox GL JS -->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.css" rel="stylesheet" />
+  
+  <!-- Application Styles -->
+  <link href="{{ url_for('static', filename='css/map.css') }}" rel="stylesheet" />
+</head>
+<body>
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Colorbar Legend -->
+  <div id="colorbarContainer">
+    <div id="colorbarTitle">Loading...</div>
+    <div id="colorbarGradient"></div>
+    <div id="colorbarLabels">
+      <span id="colorbarMin">—</span>
+      <span id="colorbarMax">—</span>
+    </div>
+    <div id="colorbarUnits"></div>
+  </div>
+
+  <!-- Drawer Toggle Button -->
+  <button id="drawerToggle" title="Controls" aria-label="Controls">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h10M18 7h2M4 17h2M8 17h12M4 12h6M14 12h8" stroke="#111827" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="16" cy="7" r="2" fill="#111827"/>
+      <circle cx="6" cy="17" r="2" fill="#111827"/>
+      <circle cx="12" cy="12" r="2" fill="#111827"/>
+    </svg>
+  </button>
+
+  <!-- Slide-out Drawer -->
+  <aside id="drawer" aria-label="Map controls">
+    <div id="drawerHeader">
+      <div id="drawerTitle">Forecast Controls</div>
+      <button id="drawerClose" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke="#111827" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="drawerBody">
+      <!-- Model Selection -->
+      <div class="section">
+        <div class="sectionTitle">Model</div>
+        <div class="btnRow" id="modelButtons"></div>
+      </div>
+
+      <!-- Run Selection -->
+      <div class="section">
+        <div class="sectionTitle">Run</div>
+        <div class="runGrid" id="runGrid"></div>
+        <div class="metaLine" id="runMeta"></div>
+      </div>
+
+      <!-- Forecast Hour Slider -->
+      <div class="section">
+        <div class="sectionTitle">Forecast Time</div>
+        <div class="sliderWrap">
+          <div class="sliderTop">
+            <div class="val" id="fhrLabel">+000h</div>
+            <div class="hint" id="validTimeLabel">Valid: —</div>
+          </div>
+          <input id="fhrSlider" type="range" min="0" max="240" step="6" value="0" />
+        </div>
+      </div>
+
+      <!-- Time Zone -->
+      <div class="section">
+        <div class="sectionTitle">Time Zone</div>
+        <div class="fieldRow">
+          <label class="inline" for="tzSelect">Display valid times in</label>
+          <select id="tzSelect"></select>
+        </div>
+      </div>
+
+      <!-- Product Selection -->
+      <div class="section">
+        <div class="sectionTitle">Product</div>
+
+        <div class="fieldRow" style="margin-bottom:10px;">
+          <label class="inline" for="productSelect">Field</label>
+          <select id="productSelect">
+            <option value="t2m">2m Temperature</option>
+            <option value="gh500">500 hPa Heights</option>
+            <option value="prmsl">Sea Level Pressure</option>
+          </select>
+        </div>
+
+        <div class="fieldRow" style="align-items:center;">
+          <label style="font-size:13px; color: var(--text); font-weight:650;">
+            <input type="checkbox" id="ghContours" style="transform: translateY(1px);" />
+            GH Contours
+          </label>
+          <label class="inline" for="ghProductSelect" style="margin-left:8px;">Level</label>
+          <select id="ghProductSelect" style="min-width:120px;">
+            <option value="gh500">500 hPa</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="metaLine" style="margin-top:0;">
+        Tip: You can keep this drawer open while panning/zooming.
+      </div>
+    </div>
+  </aside>
+
+  <!-- Bottom Time Bar -->
+  <div id="bottomTimeBar" aria-label="Valid time scrubber">
+    <div class="btRow">
+      <div class="btLeft">
+        <div class="btTitle">Valid Time</div>
+        <div class="btSub" id="bottomValidLabel">—</div>
+      </div>
+
+      <div class="btMid">
+        <input id="bottomFhrSlider" type="range" min="0" max="240" step="6" value="0" />
+      </div>
+
+      <div class="btRight">
+        <div class="btFhr" id="bottomFhrLabel">+000h</div>
+        <div class="btTz" id="bottomTzLabel">UTC</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application JavaScript -->
+  <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+  
+  <!-- Map Initialization -->
+  <script>
+    // Initialize Mapbox
+    mapboxgl.accessToken = '{{ mapbox_token }}';
+    
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/streets-v11',
+      center: [-98.5795, 39.8283],
+      zoom: 3
+    });
+
+    // Initialize app when map loads
+    map.on('load', onMapLoad);
+  </script>
+</body>
+</html>
